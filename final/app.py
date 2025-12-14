@@ -5,6 +5,15 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.graph_objs as pgo
 import calendar
+import matplotlib as mpl
+
+mpl.rcParams.update({
+    "text.color": "#ffffff",
+    "axes.labelcolor": "#ffffff",
+    "axes.titlecolor": "#ffffff",
+    "xtick.color": "#d1d5db",
+    "ytick.color": "#d1d5db",
+})
 
 # ----------------------------------------------------
 data_set = pd.read_csv('Coffee Shop Sales.csv')
@@ -14,6 +23,46 @@ st.set_page_config(
     layout="wide"
 )
 
+def is_dark_theme():
+    try:
+        return st.get_option("theme.base") == "dark"
+    except Exception:
+        return False
+
+IS_DARK = is_dark_theme()
+
+HOURLY_COLORS = {
+    "title": "#ffffff" if IS_DARK else "#1f2937",
+    "label": "#d1d5db" if IS_DARK else "#444",
+    "grid": "#555555" if IS_DARK else "#dddddd",
+}
+
+STREAMLIT_DARK_BG = "#0e1117"   # official Streamlit dark background
+STREAMLIT_LIGHT_BG = "#ffffff"
+
+FIG_BG = STREAMLIT_DARK_BG if IS_DARK else STREAMLIT_LIGHT_BG
+
+
+# ----------------------------------------------------
+# Insert CSS to make selectbox & multiselect selection-only (no typing)
+st.markdown(
+    """
+    <style>
+    /* Make selectbox & multiselect selection-only (no typing) */
+    /* Disable typing inside selectbox input */
+    div[data-baseweb="select"] input {
+        pointer-events: none !important;
+        caret-color: transparent !important;
+    }
+    /* Same rule for multiselect */
+    div[data-baseweb="select"] div[role="combobox"] input {
+        pointer-events: none !important;
+        caret-color: transparent !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 # ----------------------------------------------------
 # Dashboard Title
 # ----------------------------------------------------
@@ -23,7 +72,7 @@ st.markdown("Net sales | Rush Hours |Trendy categories")
 st.divider()
 
 # ----------------------------------------------------
-# Unified Sidebar Filters for All Graphs
+# Unified Sidebar Filters for All Graphs (filters are now only selection, not writeable)
 # ----------------------------------------------------
 store_locations = ['All Stores'] + sorted(data_set['store_location'].unique())
 
@@ -40,10 +89,25 @@ default_store = 'All Stores'
 default_category = 'All Categories'
 
 with st.sidebar:
-    selected_store = st.selectbox('Store location:', store_locations, index=store_locations.index(default_store))
+    # selectbox uses 'readonly' key, so user cannot type 
+    selected_store = st.selectbox(
+        'Store location:',
+        store_locations,
+        index=store_locations.index(default_store),
+        key="store_select_readonly",
+        label_visibility="visible",
+        disabled=False
+    )
     # Set default index for category based on value, or 0 if not present
     default_category_idx = product_categories.index(default_category) if default_category in product_categories else 0
-    selected_category = st.selectbox('Product category:', product_categories, index=default_category_idx)
+    selected_category = st.selectbox(
+        'Product category:',
+        product_categories,
+        index=default_category_idx,
+        key="cat_select_readonly",
+        label_visibility="visible",
+        disabled=False
+    )
 
 def get_filtered_data(store_location, product_category):
     df = data_set.copy()
@@ -159,58 +223,71 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
+
+# --- Normal text title for Hourly Transactions ---
 st.subheader("Hourly Transactions")
 
 # Extract hour if not already present
 if 'hour' not in filtered_data.columns:
     filtered_data['hour'] = filtered_data['transaction_time'].astype(str).str.split(':').str[0].astype(int)
 
-def plot_hourly_transactions_streamlit(df, store_loc, prod_cat):
-    # Group by hour and sum transaction_qty
-    hourly_summary = df.groupby('hour', as_index=False)['transaction_qty'].sum()
-    hourly_summary = hourly_summary.sort_values('hour')
+import plotly.graph_objects as go
+
+def plot_hourly_transactions_plotly(df, store_loc, prod_cat):
+    if df.empty or 'hour' not in df.columns or 'transaction_qty' not in df.columns:
+        st.warning("No data available for the selected filters.")
+        return
+
+    # Aggregate by hour
+    hourly_summary = df.groupby('hour', as_index=False)['transaction_qty'].sum().sort_values('hour')
+
     if hourly_summary.empty:
         st.warning("No data available for the selected filters.")
         return
-    # Set transparent background for the graph
-    fig, ax = plt.subplots(figsize=(10, 4), facecolor='none')
-    ax.set_facecolor('none')
 
-    # Set color of graph title, x/y labels, and ticks to white
-    text_color = 'white'
-    bars = ax.bar(hourly_summary['hour'], hourly_summary['transaction_qty'], color='coral')
-    ax.set_xlabel('Hour of Day', color=text_color)
-    ax.set_ylabel('Total Quantity Ordered', color=text_color)
-    if store_loc == "All Stores" and prod_cat == "All Categories":
-        t = "Total Transactions by Hour - All Stores, All Categories"
-    elif store_loc == "All Stores":
-        t = f"Total Transactions by Hour - All Stores, {prod_cat}"
-    elif prod_cat == "All Categories":
-        t = f"Total Transactions by Hour - {store_loc}, All Categories"
-    else:
-        t = f"Total Transactions by Hour - {store_loc}, {prod_cat}"
-    ax.set_title(t, color=text_color)
-    ax.set_xticks(hourly_summary['hour'])
-    ax.tick_params(axis='x', colors=text_color)
-    ax.tick_params(axis='y', colors=text_color)
-    ax.grid(axis='y', linestyle='--', alpha=0.6)
+    # Get Streamlit theme config and determine dark mode safely without relying on unsupported internals
+    IS_DARK = st.get_option("theme.base") == "dark"
 
-    # Add labels on top of bars (white numbers)
-    for bar, qty in zip(bars, hourly_summary['transaction_qty']):
-        height = bar.get_height()
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            height,
-            str(qty),
-            ha='center',
-            va='bottom',
-            fontsize=9,
-            color=text_color  # set numbers to white
-        )
-    plt.tight_layout()
-    st.pyplot(fig, transparent=True)
+    # Make Plotly background transparent regardless of light/dark
+    bg_color = "rgba(0,0,0,0)"  # fully transparent
 
-plot_hourly_transactions_streamlit(filtered_data, selected_store, selected_category)
+    # Safely grab theme colors with fallback
+    text_color = (
+        st.get_option("theme.textColor")
+        or ("#ffffff" if IS_DARK else "#1f2937")
+    )
+    grid_color = (
+        st.get_option("theme.secondaryBackgroundColor")
+        or ("#555555" if IS_DARK else "#dddddd")
+    )
+    bar_color = "#FF7F50"  # bright coral-like color
+
+    # Removed dynamic title generation and display
+
+    # Build Plotly figure (no plotly title to prevent double title)
+    fig = go.Figure(go.Bar(
+        x=hourly_summary['hour'],
+        y=hourly_summary['transaction_qty'],
+        marker_color=bar_color,
+        text=hourly_summary['transaction_qty'],
+        textposition='outside'
+    ))
+
+    fig.update_layout(
+        # Remove internal Plotly title to avoid clash with custom Streamlit title
+        xaxis=dict(title="Hour of Day", tickmode='linear', color=text_color, gridcolor=grid_color),
+        yaxis=dict(title="Total Quantity Ordered", color=text_color, gridcolor=grid_color),
+        plot_bgcolor=bg_color,
+        paper_bgcolor=bg_color,
+        margin=dict(l=50, r=50, t=50, b=40),
+        width=900,
+        height=400
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+# Usage
+plot_hourly_transactions_plotly(filtered_data, selected_store, selected_category)
 
 st.divider()
 
