@@ -1,3 +1,4 @@
+from turtle import width
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,8 +6,103 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.graph_objs as pgo
 import calendar
-import matplotlib as mpl
+import matplotlib as mpl 
+def apply_glowing_selectbox():
+    st.markdown("""
+    <style>
 
+    /* =========================
+       Base state (NO glow)
+       ========================= */
+
+    div[data-baseweb="select"] div[role="combobox"] {
+        min-height: 60px;
+        border-radius: 14px;
+        background-color: #111111;
+        border: 2px solid #222c;
+        box-shadow: none;
+        transition: box-shadow 0.25s ease, border-color 0.25s ease;
+    }
+
+    div[data-baseweb="select"] span {
+        font-size: 20px;
+        font-weight: 600;
+        color: #ffffff;
+        text-shadow: none;
+        transition: text-shadow 0.25s ease;
+    }
+
+    label {
+        font-size: 20px !important;
+        font-weight: 700;
+        color: #ffffff;
+        text-shadow: none;
+        transition: text-shadow 0.25s ease;
+    }
+
+    svg {
+        filter: none;
+        transition: filter 0.25s ease;
+    }
+
+    /* =========================
+       Hover state (GLOW ONLY)
+       ========================= */
+
+    div[data-baseweb="select"] div[role="combobox"]:hover {
+        border-color: #00ffff;
+        box-shadow: 0 0 22px rgba(0, 255, 255, 0.7);
+    }
+
+    div[data-baseweb="select"] div[role="combobox"]:hover span {
+        text-shadow:
+            0 0 6px #00e5ff,
+            0 0 18px #00ffff;
+    }
+
+    div[data-baseweb="select"] div[role="combobox"]:hover svg {
+        filter: drop-shadow(0 0 6px #00e5ff);
+    }
+
+    label:hover {
+        text-shadow:
+            0 0 6px #00e5ff,
+            0 0 18px #00ffff;
+    }
+
+    </style>
+    """, unsafe_allow_html=True)
+
+# Call once
+apply_glowing_selectbox()
+# apply_glowing_styles()
+
+
+
+# ----------------------------------------------------
+# Sidebar icons
+# ----------------------------------------------------
+STORE_ICONS = {
+    "All Stores": "🏬",
+    "Lower Manhattan": "🏙️",
+    "Hell's Kitchen": "🌆",
+    "Astoria": "🏘️"
+}
+
+CATEGORY_ICONS = {
+    "All Categories": "📦",
+    "Coffee": "☕",
+    "Tea": "🍵",
+    "Drinking Chocolate": "🍫",
+    "Bakery": "🥐",
+    "Flavours": "🧴",
+    "Loose Tea": "🌿",
+    "Coffee beans": "🫘",
+    "Packaged Chocolate": "🎁",
+    "Branded": "🏷️"
+}
+
+# Set basic matplotlib color params
 mpl.rcParams.update({
     "text.color": "#ffffff",
     "axes.labelcolor": "#ffffff",
@@ -42,19 +138,16 @@ STREAMLIT_LIGHT_BG = "#ffffff"
 
 FIG_BG = STREAMLIT_DARK_BG if IS_DARK else STREAMLIT_LIGHT_BG
 
-
 # ----------------------------------------------------
 # Insert CSS to make selectbox & multiselect selection-only (no typing)
 st.markdown(
     """
     <style>
     /* Make selectbox & multiselect selection-only (no typing) */
-    /* Disable typing inside selectbox input */
     div[data-baseweb="select"] input {
         pointer-events: none !important;
         caret-color: transparent !important;
     }
-    /* Same rule for multiselect */
     div[data-baseweb="select"] div[role="combobox"] input {
         pointer-events: none !important;
         caret-color: transparent !important;
@@ -72,7 +165,7 @@ st.markdown("Net sales | Rush Hours |Trendy categories")
 st.divider()
 
 # ----------------------------------------------------
-# Unified Sidebar Filters for All Graphs (filters are now only selection, not writeable)
+# Unified Sidebar Filters for All Graphs (Filters as button groups instead of selectboxes)
 # ----------------------------------------------------
 store_locations = ['All Stores'] + sorted(data_set['store_location'].unique())
 
@@ -88,26 +181,36 @@ product_categories = ['All Categories'] + category_order
 default_store = 'All Stores'
 default_category = 'All Categories'
 
+import streamlit as st
+
+if 'selected_store' not in st.session_state:
+    st.session_state['selected_store'] = default_store
+if 'selected_category' not in st.session_state:
+    st.session_state['selected_category'] = default_category
+
 with st.sidebar:
-    # selectbox uses 'readonly' key, so user cannot type 
-    selected_store = st.selectbox(
-        'Store location:',
+    st.markdown("#### Store location:")
+    selected_store = st.radio(
+        '',
         store_locations,
-        index=store_locations.index(default_store),
-        key="store_select_readonly",
-        label_visibility="visible",
-        disabled=False
+        index=store_locations.index(st.session_state['selected_store']),
+        key="store_radio_button",
+        label_visibility="collapsed",
+        format_func=lambda x: f"{STORE_ICONS.get(x, '📍')}  {x}"
     )
-    # Set default index for category based on value, or 0 if not present
-    default_category_idx = product_categories.index(default_category) if default_category in product_categories else 0
-    selected_category = st.selectbox(
-        'Product category:',
+    st.session_state['selected_store'] = selected_store
+
+    st.markdown("#### Product category:")
+    default_category_idx = product_categories.index(st.session_state['selected_category'])
+    selected_category = st.radio(
+        '',
         product_categories,
         index=default_category_idx,
-        key="cat_select_readonly",
-        label_visibility="visible",
-        disabled=False
+        key="cat_radio_button",
+        label_visibility="collapsed",
+        format_func=lambda x: f"{CATEGORY_ICONS.get(x, '🔹')}  {x}"
     )
+    st.session_state['selected_category'] = selected_category
 
 def get_filtered_data(store_location, product_category):
     df = data_set.copy()
@@ -117,7 +220,48 @@ def get_filtered_data(store_location, product_category):
         df = df[df['product_category'] == product_category]
     return df
 
-filtered_data = get_filtered_data(selected_store, selected_category)
+filtered_data = get_filtered_data(
+    st.session_state['selected_store'],
+    st.session_state['selected_category']
+)
+
+# Remove any sidebar glowing/radio glow effect, just set simple style
+st.markdown("""
+<style>
+div[data-baseweb="radio"] label {
+    display: inline-block;
+    margin: 3px 8px 8px 0 !important;
+    padding: 10px 24px;
+    border-radius: 14px;
+    background-color: #111111;
+    border: 2px solid #222c;
+    color: #FFF !important;
+    font-size: 18px !important;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, border 0.2s;
+}
+div[data-baseweb="radio"] label:hover {
+    background-color: #1e242f;
+    border-color: #00aabb55;
+}
+div[data-baseweb="radio"] input[type="radio"] {
+    display: none;
+}
+div[data-baseweb="radio"] input[type="radio"]:checked+div {
+    background: #00e5ff;
+    color: #222 !important;
+    border-color: #00e5ff;
+}
+div[data-baseweb="radio"] input[type="radio"]:not(:checked)+div {
+}
+label[for$="radio_button"] {
+    font-size: 20px !important;
+    font-weight: 700;
+    color: #ffffff;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ----------------------------------------------------
 # Top Row (Two Graphs Side by Side)
@@ -133,27 +277,22 @@ def get_data_for_net_sales_graph(store_location):
     return df
 
 df = get_data_for_net_sales_graph(selected_store)
-# Convert transaction_date to datetime if not already
 if not pd.api.types.is_datetime64_any_dtype(df['transaction_date']):
     df['transaction_date'] = pd.to_datetime(df['transaction_date'], errors='coerce')
 df = df.dropna(subset=['transaction_date'])
 df['YearMonth'] = df['transaction_date'].dt.to_period('M').astype(str)
-df['MonthOnly'] = df['transaction_date'].dt.strftime('%b')  # e.g., Jan, Feb
+df['MonthOnly'] = df['transaction_date'].dt.strftime('%b')
 df['net_sales'] = df['transaction_qty'] * df['unit_price']
 
-# Only keep the six months in the data (if more, restrict)
 unique_months = df['YearMonth'].unique()
 if len(unique_months) > 6:
     keep_months = sorted(unique_months)[:6]
     df = df[df['YearMonth'].isin(keep_months)]
 
-# Aggregate by YearMonth, MonthOnly, store_location
 summary = df.groupby(['YearMonth', 'MonthOnly', 'store_location'], as_index=False)['net_sales'].sum()
-
 pivot = summary.pivot(index='YearMonth', columns='store_location', values='net_sales')
 months_only = summary.drop_duplicates('YearMonth').set_index('YearMonth')['MonthOnly'].reindex(pivot.index).tolist()
 
-# Define store color palette (for up to 10 stores)
 color_palette = [
     '#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A',
     '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52'
@@ -222,12 +361,9 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
-
-
 # --- Normal text title for Hourly Transactions ---
 st.subheader("Hourly Transactions")
 
-# Extract hour if not already present
 if 'hour' not in filtered_data.columns:
     filtered_data['hour'] = filtered_data['transaction_time'].astype(str).str.split(':').str[0].astype(int)
 
@@ -238,20 +374,15 @@ def plot_hourly_transactions_plotly(df, store_loc, prod_cat):
         st.warning("No data available for the selected filters.")
         return
 
-    # Aggregate by hour
     hourly_summary = df.groupby('hour', as_index=False)['transaction_qty'].sum().sort_values('hour')
 
     if hourly_summary.empty:
         st.warning("No data available for the selected filters.")
         return
 
-    # Get Streamlit theme config and determine dark mode safely without relying on unsupported internals
     IS_DARK = st.get_option("theme.base") == "dark"
+    bg_color = "rgba(0,0,0,0)"
 
-    # Make Plotly background transparent regardless of light/dark
-    bg_color = "rgba(0,0,0,0)"  # fully transparent
-
-    # Safely grab theme colors with fallback
     text_color = (
         st.get_option("theme.textColor")
         or ("#ffffff" if IS_DARK else "#1f2937")
@@ -262,9 +393,6 @@ def plot_hourly_transactions_plotly(df, store_loc, prod_cat):
     )
     bar_color = "#FF7F50"  # bright coral-like color
 
-    # Removed dynamic title generation and display
-
-    # Build Plotly figure (no plotly title to prevent double title)
     fig = go.Figure(go.Bar(
         x=hourly_summary['hour'],
         y=hourly_summary['transaction_qty'],
@@ -274,15 +402,16 @@ def plot_hourly_transactions_plotly(df, store_loc, prod_cat):
     ))
 
     fig.update_layout(
-        # Remove internal Plotly title to avoid clash with custom Streamlit title
         xaxis=dict(title="Hour of Day", tickmode='linear', color=text_color, gridcolor=grid_color),
         yaxis=dict(title="Total Quantity Ordered", color=text_color, gridcolor=grid_color),
         plot_bgcolor=bg_color,
         paper_bgcolor=bg_color,
         margin=dict(l=50, r=50, t=50, b=40),
         width=900,
-        height=400
+        height=450
     )
+
+    # Removed legend glow
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -312,10 +441,8 @@ def get_monthly_category_summary(df, store_location, product_category):
     df_filtered = df.copy()
     if df_filtered.empty:
         return pd.DataFrame()
-    # Ensure transaction_date is string before using .str
     if not pd.api.types.is_string_dtype(df_filtered['transaction_date']):
         df_filtered['transaction_date'] = df_filtered['transaction_date'].astype(str)
-    # Now safely use .str.contains
     if df_filtered['transaction_date'].str.contains('/').any():
         date_format = '%d/%m/%Y'
     elif df_filtered['transaction_date'].str.contains('-').any():
@@ -350,7 +477,6 @@ def get_monthly_category_summary(df, store_location, product_category):
         summary['product_category'] = product_category
         group_col = 'product_category'
 
-    # Complete missing months for each group
     months = sorted(summary['month'].unique())
     all_groups = summary[group_col].unique()
     complete_idx = pd.MultiIndex.from_product([all_groups, months], names=[group_col, 'month'])
@@ -440,6 +566,9 @@ def st_plot_category_by_month(df, store_location, product_category):
         margin=dict(l=60, r=160, t=70, b=50),
         hovermode='x unified',
     )
+
+    # Removed legend glow
+
     st.plotly_chart(fig, use_container_width=True)
 
 st.header("")
