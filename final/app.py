@@ -812,9 +812,9 @@ else:
     st.markdown("---")
     st.caption("Dashboard generated using Streamlit")
     st.markdown(
-        "Authors  \n"
+        "Authors: \n"
         "Hamza Tahboub  \n"
-        "Majd Tgbarea  \n"
+        "Majd Igbarea  \n"
         "Marysol Karwan  \n"
         "Igor Kornov"
     )
