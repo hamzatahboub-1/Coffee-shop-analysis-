@@ -15,7 +15,7 @@ import os
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Build the full path to the CSV file
-csv_path = os.path.join(current_dir, 'Coffee Shop Sales.csv')
+csv_path = os.path.join(current_dir, 'final/Coffee Shop Sales.csv')
 
 # Load it
 data_set = pd.read_csv(csv_path)
