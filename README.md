@@ -1,73 +1,109 @@
-☕ Maven Roasters: AI-Powered Analytics Dashboard
-📖 Overview
-This project is a comprehensive Coffee Shop Analytics Dashboard built with Python and Streamlit. It goes beyond traditional Business Intelligence by integrating an AI Future Insights Lab.
+# ☕ Maven Roasters: AI-Powered Analytics Dashboard
 
-The application analyzes sales transaction data to provide historical insights and uses Machine Learning models to predict future revenue, simulate new product launches, and analyze store geographical efficiency.
+<div align="center">
 
-dashboard link: https://px8m8ezwfxgx77kkxwgpje.streamlit.app/
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://px8m8ezwfxgx77kkxwgpje.streamlit.app/)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue)](https://www.python.org/)
+[![Scikit-Learn](https://img.shields.io/badge/ML-Scikit--Learn-orange)](https://scikit-learn.org/)
 
-🚀 Key Features
-📊 1. Business Intelligence Dashboard
-Net Sales Analysis: Interactive bar charts visualizing monthly revenue performance across different store locations.
+**A next-generation BI tool integrating historical sales analysis with predictive AI modeling.**
 
-Hourly Traffic & Rush Detection: Analysis of peak hours with standard deviation metrics to identify rush periods vs. quiet times.
+[**🚀 Launch Live Dashboard**](https://px8m8ezwfxgx77kkxwgpje.streamlit.app/)
 
-Product Size Analysis: Stacked bar charts breaking down cup size preferences (Small, Medium, Large) by product category.
+</div>
 
-Interactive Filters: Global sidebar filters for Store Location and Product Category that update all visualizations instantly.
+---
 
-🤖 2. AI Future Insights & Lab
-This application utilizes Scikit-Learn to power three distinct predictive modules:
+## 📖 Overview
 
-📈 Future Revenue Prediction: * Uses Polynomial Regression to forecast sales trends 6-12 months into the future.
+This project is a comprehensive **Coffee Shop Analytics Dashboard** built with Python and Streamlit. Unlike traditional dashboards that only look backward, this application integrates an **AI Future Insights Lab** to look forward.
 
-Incorporates seasonal data (temperature and tourist index) to refine predictions.
+The application analyzes sales transaction data to provide historical insights and uses **Machine Learning models** to predict future revenue, simulate new product launches, and analyze store geographical efficiency.
 
-🧪 New Product Simulator: * Uses a Random Forest Regressor to simulate the success of a hypothetical product launch.
+---
 
-Takes into account "Real World Context" (Foot traffic, Office density) to predict unit sales and revenue.
+## 🚀 Key Features
 
-🗺️ Geographical Efficiency Analysis: * Uses Linear Regression to predict the ideal square footage of a store based on its "Bakery vs. Coffee" sales ratio.
+### 📊 1. Business Intelligence Dashboard
 
-Calculates an efficiency score (Sales per Predicted Sq. Ft.) to identify over/under-performing real estate.
+| Feature | Description |
+| :--- | :--- |
+| **Net Sales Analysis** | Interactive bar charts visualizing monthly revenue performance across different store locations. |
+| **Rush Detection** | Analysis of peak hours with standard deviation metrics to identify rush periods vs. quiet times. |
+| **Product Size Analysis** | Stacked bar charts breaking down cup size preferences (Small, Medium, Large) by product category. |
+| **Interactive Filters** | Global sidebar filters for Store Location and Product Category that update all visualizations instantly. |
 
-🛠️ Tech Stack
-Frontend: Streamlit (Custom CSS for UI enhancements)
+### 🤖 2. AI Future Insights & Lab
 
-Data Manipulation: Pandas, NumPy
+> This application utilizes **Scikit-Learn** to power three distinct predictive modules:
 
-Visualization: Plotly Graph Objects, Matplotlib
+#### 📈 Future Revenue Prediction
+* **Model:** Polynomial Regression (Pipeline).
+* **Function:** Forecasts sales trends 6–12 months into the future.
+* **Logic:** Incorporates seasonal metadata (temperature and tourist index) to refine predictions.
 
-Machine Learning: Scikit-Learn (Linear Regression, Random Forest, Polynomial Features, Pipelines)
+#### 🧪 New Product Simulator
+* **Model:** Random Forest Regressor.
+* **Function:** Simulates the success of a hypothetical product launch.
+* **Logic:** Takes into account "Real World Context" (Foot traffic, Office density) to predict unit sales and revenue.
 
-🧠 Machine Learning Logic
-This project demonstrates several data science techniques:
+#### 🗺️ Geographical Efficiency Analysis
+* **Model:** Linear Regression.
+* **Function:** Predicts the *ideal* square footage of a store based on its "Bakery vs. Coffee" sales ratio.
+* **Logic:** Calculates an efficiency score (**Sales per Predicted Sq. Ft.**) to identify over/under-performing real estate.
 
-Data Enrichment:
+---
 
-The raw CSV is enriched with synthetic "Metadata" dictionaries (e.g., STORE_CONTEXT), adding variables like foot_traffic, office_density, and sq_ft to allow for more complex modeling.
+## 🛠️ Tech Stack
 
-Seasonal data (Temperature, Tourist Index) is mapped to transaction dates.
+<div align="center">
 
-Models Used:
+| Category | Libraries / Tools |
+| :--- | :--- |
+| **Frontend** | Streamlit (Custom CSS) |
+| **Data Manipulation** | Pandas, NumPy |
+| **Visualization** | Plotly Graph Objects, Matplotlib |
+| **Machine Learning** | Scikit-Learn (LinearRegression, RandomForest, PolynomialFeatures) |
 
-Pipeline 1 (Forecasting): PolynomialFeatures(degree=2) + LinearRegression. Accounts for the non-linear curve of seasonal sales.
+</div>
 
-Pipeline 2 (Simulation): ColumnTransformer (OneHotEncoding) + RandomForestRegressor. Handles categorical data (Product Categories) to predict continuous targets (Sales Qty).
+---
 
-Pipeline 3 (Real Estate): LinearRegression. Finds the correlation between product mix (Bakery Ratio) and required physical space.
+## 🧠 Machine Learning Logic
 
-📂 File Structure
+This project demonstrates several advanced data science techniques:
+
+### 1. Data Enrichment
+The raw CSV is enriched with synthetic **"Metadata" dictionaries** (e.g., `STORE_CONTEXT`), adding variables like:
+* `foot_traffic`
+* `office_density`
+* `sq_ft`
+* `seasonal_data` (Temperature, Tourist Index)
+
+### 2. Model Pipelines
+
+| Pipeline | Composition | Reasoning |
+| :--- | :--- | :--- |
+| **Forecasting** | `PolynomialFeatures(degree=2)` + `LinearRegression` | Accounts for the non-linear curve of seasonal sales cycles. |
+| **Simulation** | `ColumnTransformer` + `RandomForestRegressor` | Handles categorical data (Product Categories) to predict continuous targets (Sales Qty). |
+| **Real Estate** | `LinearRegression` | Finds the correlation between product mix (Bakery Ratio) and required physical space. |
+
+---
+
+## 📂 File Structure
+
+```text
 ├── app.py                  # Main application code
 ├── Coffee Shop Sales.csv   # Dataset
 ├── README.md               # Documentation
-|-- packages.txt            # Dependencies
-└── requirements.txt        # Dependencies
-👥 Authors
-Hamza Tahboub(The AI builder)
+├── packages.txt            # System dependencies
+└── requirements.txt        # Python library dependencies
+## 👥 Authors
 
-Majd Igbarea
+<div align="center">
 
-Marysol Karwan
+| **Hamza Tahboub** | **Majd Igbarea** | **Marysol Karwan** | **Igor Kornov** |
+| :---: | :---: | :---: | :---: |
+| *(The AI Builder)* | Contributor | Contributor | Contributor |
 
-Igor Kornov
+</div>
