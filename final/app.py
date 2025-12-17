@@ -2,6 +2,8 @@ from turtle import width
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # This tells it to be non-interactive
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.graph_objs as pgo
