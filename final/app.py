@@ -9,16 +9,8 @@ import plotly.graph_objects as go
 import plotly.graph_objs as pgo
 import calendar
 import matplotlib as mpl 
-import os
 
-# Get the folder where this script is running
-current_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Build the full path to the CSV file
-csv_path = os.path.join(current_dir, 'final/Coffee Shop Sales.csv')
-
-# Load it
-data_set = pd.read_csv(csv_path)
 
 def apply_glowing_selectbox():
     st.markdown("""
@@ -418,7 +410,7 @@ def render_ai_dashboard(df):
 
 # -----------------------------------------------
 # ----------------------------------------------------
-data_set = pd.read_csv('Coffee Shop Sales.csv')
+data_set = pd.read_csv('final/Coffee Shop Sales.csv')
 
 # --- FIX: DEFINE GLOBAL VARIABLES HERE ---
 # This ensures both the Dashboard and the AI Page can see the list of stores
