@@ -9,6 +9,16 @@ import plotly.graph_objects as go
 import plotly.graph_objs as pgo
 import calendar
 import matplotlib as mpl 
+import os
+
+# Get the folder where this script is running
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Build the full path to the CSV file
+csv_path = os.path.join(current_dir, 'Coffee Shop Sales.csv')
+
+# Load it
+data_set = pd.read_csv(csv_path)
 
 def apply_glowing_selectbox():
     st.markdown("""
