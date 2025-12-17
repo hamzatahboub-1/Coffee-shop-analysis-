@@ -90,7 +90,6 @@ The raw CSV is enriched with synthetic **"Metadata" dictionaries** (e.g., `STORE
 
 ---
 
-
 ## 📂 File Structure
 
 ```text
@@ -99,7 +98,9 @@ The raw CSV is enriched with synthetic **"Metadata" dictionaries** (e.g., `STORE
 ├── README.md               # Documentation
 ├── packages.txt            # System dependencies
 └── requirements.txt        # Python library dependencies
+```
 
+---
 
 ## 👥 Authors
 
