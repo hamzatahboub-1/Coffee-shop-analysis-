@@ -112,113 +112,177 @@ mpl.rcParams.update({
 
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, PolynomialFeatures
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-import datetime
+import numpy as np
+import pandas as pd
 
-# --- 1. External Real-World Data (The Context) ---
+# --- 1. Store Context (For Product Simulation) ---
+# The AI needs this to know why some stores sell more than others.
 STORE_CONTEXT = {
-    "Lower Manhattan": {"sq_ft": 1200, "foot_traffic": 95, "office_density": 0.9, "competitors": 5},
-    "Hell's Kitchen":  {"sq_ft": 800,  "foot_traffic": 85, "office_density": 0.4, "competitors": 8},
-    "Astoria":         {"sq_ft": 1500, "foot_traffic": 60, "office_density": 0.2, "competitors": 2},
-    "All Stores":      {"sq_ft": 3500, "foot_traffic": 80, "office_density": 0.5, "competitors": 15}
+    "Lower Manhattan": {"sq_ft": 1200, "foot_traffic": 95, "office_density": 0.9},
+    "Hell's Kitchen":  {"sq_ft": 800,  "foot_traffic": 85, "office_density": 0.4},
+    "Astoria":         {"sq_ft": 1500, "foot_traffic": 60, "office_density": 0.2},
+    "All Stores":      {"sq_ft": 3500, "foot_traffic": 80, "office_density": 0.5}
+}
+
+# --- 2. Ground Truth (For Size Prediction Training) ---
+# We use this to teach the AI how to recognize a "Big" vs "Small" store.
+TRAINING_DATA_REALITY = {
+    "Lower Manhattan": 1200, 
+    "Hell's Kitchen":  800,  
+    "Astoria":         1500  
+}
+
+# --- 3. Seasonal Data (For Sales Forecasting) ---
+NYC_SEASONAL_DATA = {
+    1:  {"avg_temp": 33, "tourist_index": 0.8}, 
+    2:  {"avg_temp": 35, "tourist_index": 0.8},
+    3:  {"avg_temp": 42, "tourist_index": 1.0},
+    4:  {"avg_temp": 53, "tourist_index": 1.1},
+    5:  {"avg_temp": 62, "tourist_index": 1.2},
+    6:  {"avg_temp": 72, "tourist_index": 1.4},
+    7:  {"avg_temp": 77, "tourist_index": 1.5},
+    8:  {"avg_temp": 75, "tourist_index": 1.5},
+    9:  {"avg_temp": 68, "tourist_index": 1.3},
+    10: {"avg_temp": 58, "tourist_index": 1.2},
+    11: {"avg_temp": 48, "tourist_index": 1.1},
+    12: {"avg_temp": 38, "tourist_index": 1.6}
 }
 
 class AIEngine:
-
     def __init__(self, df):
         self.df = df.copy()
         
-        # --- FIX: Calculate net_sales immediately ---
-        # The raw CSV doesn't have this, so we compute it here.
+        # Calculate Net Sales
         if 'net_sales' not in self.df.columns:
             self.df['net_sales'] = self.df['transaction_qty'] * self.df['unit_price']
-        # --------------------------------------------
             
+        # Parse Dates (dayfirst=True fixes the error you saw earlier)
+        self.df['tx_date'] = pd.to_datetime(self.df['transaction_date'], dayfirst=True, errors='coerce')
+        
+        # Enrich Data immediately
         self._enrich_data()
-        self.qty_model = None
+        
+        self.qty_model = None  # For Product Simulation
+        self.area_model = None # For Size Prediction
 
     def _enrich_data(self):
+        """Injects ALL external data (Context + Weather) into the main dataframe."""
+        
+        # 1. Inject Store Context (Traffic & Density)
+        # This fixes the missing column error!
         for store, meta in STORE_CONTEXT.items():
-            if store == 'All Stores':
-                continue
+            if store == 'All Stores': continue
             mask = self.df['store_location'] == store
             for key, value in meta.items():
                 self.df.loc[mask, key] = value
+        
+        # 2. Inject Seasonal Data (Temp & Tourism)
+        self.df['month_num'] = self.df['tx_date'].dt.month
+        self.df['avg_temp'] = self.df['month_num'].map(lambda x: NYC_SEASONAL_DATA.get(x, {}).get('avg_temp', 50))
+        self.df['tourist_index'] = self.df['month_num'].map(lambda x: NYC_SEASONAL_DATA.get(x, {}).get('tourist_index', 1.0))
+        
         self.df.fillna(0, inplace=True)
 
+    # --- MODEL 1: SALES FORECAST (Polynomial) ---
     def get_future_forecast(self, store_name, months=6):
         data = self.df.copy()
         if store_name != 'All Stores':
             data = data[data['store_location'] == store_name]
-
-        data['tx_date'] = pd.to_datetime(data['transaction_date'],dayfirst=True,errors='coerce')
-
-        data = data.dropna(subset=['tx_date'])
-
+            
         data['month_idx'] = data['tx_date'].dt.to_period('M').astype(int)
-        monthly_sales = data.groupby('month_idx')['net_sales'].sum().reset_index()
+        monthly = data.groupby('month_idx').agg({
+            'net_sales': 'sum', 'avg_temp': 'mean', 'tourist_index': 'mean', 'tx_date': 'first'
+        }).reset_index()
+        
+        if len(monthly) < 3: return pd.DataFrame() 
 
-        if len(monthly_sales) < 2:
-            return pd.DataFrame()
+        X = monthly[['month_idx', 'avg_temp', 'tourist_index']]
+        y = monthly['net_sales']
 
-        reg = LinearRegression()
-        reg.fit(monthly_sales[['month_idx']], monthly_sales['net_sales'])
+        poly_model = Pipeline([('poly', PolynomialFeatures(degree=2)), ('linear', LinearRegression())])
+        poly_model.fit(X, y)
+        
+        last_idx = monthly['month_idx'].max()
+        last_date = monthly['tx_date'].max()
+        
+        future_rows = []
+        for i in range(1, months + 1):
+            next_date = last_date + pd.DateOffset(months=i)
+            season = NYC_SEASONAL_DATA.get(next_date.month, {})
+            future_rows.append({
+                'month_idx': last_idx + i,
+                'avg_temp': season.get('avg_temp', 50),
+                'tourist_index': season.get('tourist_index', 1.0),
+                'Date': next_date
+            })
+            
+        future_X = pd.DataFrame(future_rows)
+        predictions = poly_model.predict(future_X[['month_idx', 'avg_temp', 'tourist_index']])
+        
+        return pd.DataFrame({"Date": future_X['Date'], "Predicted_Sales": predictions})
 
-        last_idx = monthly_sales['month_idx'].max()
-        future_indices = np.array([[last_idx + i] for i in range(1, months + 1)])
-        future_sales = reg.predict(future_indices)
-
-        base_date = pd.Timestamp("1970-01-01") + pd.offsets.MonthBegin(int(last_idx))
-        future_dates = [base_date + pd.offsets.MonthBegin(i) for i in range(1, months + 1)]
-
-        return pd.DataFrame({
-            "Date": future_dates,
-            "Predicted_Sales": future_sales
-        })
-
+    # --- MODEL 2: PRODUCT SIMULATOR (Random Forest) ---
     def train_scenario_model(self):
+        # Now this works because 'foot_traffic' is back in self.df
         features = ['product_category', 'unit_price', 'foot_traffic', 'office_density']
         target = 'transaction_qty'
+        
         train_data = self.df.dropna(subset=features + [target])
-
-        categorical_cols = ['product_category']
-        numerical_cols = ['unit_price', 'foot_traffic', 'office_density']
-
+        
         preprocessor = ColumnTransformer(transformers=[
-            ('num', 'passthrough', numerical_cols),
-            ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_cols)
+            ('num', 'passthrough', ['unit_price', 'foot_traffic', 'office_density']),
+            ('cat', OneHotEncoder(handle_unknown='ignore'), ['product_category'])
         ])
-
+        
         self.qty_model = Pipeline(steps=[
             ('preprocessor', preprocessor),
             ('model', RandomForestRegressor(n_estimators=50, random_state=42))
         ])
-
         self.qty_model.fit(train_data[features], train_data[target])
 
     def simulate_new_product(self, category, price, store_name, size_name):
-        if not self.qty_model:
-            self.train_scenario_model()
-
+        if not self.qty_model: self.train_scenario_model()
+        
+        # Get context from the restored dictionary
         context = STORE_CONTEXT.get(store_name, STORE_CONTEXT["All Stores"])
-
+        
         input_data = pd.DataFrame({
-            'product_category': [category],
-            'unit_price': [price],
-            'foot_traffic': [context['foot_traffic']],
-            'office_density': [context['office_density']]
+            'product_category': [category], 'unit_price': [price],
+            'foot_traffic': [context['foot_traffic']], 'office_density': [context['office_density']]
         })
-
+        
         avg_qty = self.qty_model.predict(input_data)[0]
         size_factor = 0.8 if size_name.lower() in ['mega', 'huge', 'xl'] else 1.0
-        estimated_monthly_units = avg_qty * 300 * size_factor
-        estimated_revenue = estimated_monthly_units * price
+        
+        return avg_qty * 300 * size_factor, avg_qty * 300 * size_factor * price, context
 
-        return estimated_monthly_units, estimated_revenue, context
+    # --- MODEL 3: STORE SIZE PREDICTOR (Linear Regression) ---
+    def predict_store_area_from_usage(self):
+        store_stats = self.df.groupby('store_location').agg(
+            total_qty=('transaction_qty', 'sum'),
+            bakery_qty=('transaction_qty', lambda x: x[self.df['product_category'] == 'Bakery'].sum())
+        ).reset_index()
+
+        store_stats['bakery_ratio'] = store_stats['bakery_qty'] / store_stats['total_qty']
+        store_stats['actual_sq_ft'] = store_stats['store_location'].map(TRAINING_DATA_REALITY)
+        
+        train_data = store_stats.dropna(subset=['actual_sq_ft'])
+
+        self.area_model = LinearRegression()
+        self.area_model.fit(train_data[['total_qty', 'bakery_ratio']], train_data['actual_sq_ft'])
+        
+        store_stats['predicted_sq_ft'] = self.area_model.predict(store_stats[['total_qty', 'bakery_ratio']])
+        return store_stats[['store_location', 'predicted_sq_ft', 'total_qty']]
 
 def render_ai_dashboard(df):
+    # --- SAFETY FIX: Create net_sales locally if missing ---
+    if 'net_sales' not in df.columns:
+        df = df.copy() # Work on a copy to avoid warnings
+        df['net_sales'] = df['transaction_qty'] * df['unit_price']
+    # -------------------------------------------------------
     st.title("🤖 AI Future Insights & Lab")
     st.markdown("Predict future trends and simulate business decisions using Real-World Context.")
     st.divider()
@@ -276,38 +340,69 @@ def render_ai_dashboard(df):
         )
 
     st.divider()
-
+# --- SECTION 3: GEOGRAPHICAL EFFICIENCY (AI-PREDICTED SIZE) ---
     st.subheader("3. 🗺️ Geographical Efficiency Analysis")
-    st.markdown("Comparing Store Efficiency: Sales per Square Foot (Real World Data Integration)")
-
-    comp_data = []
-    for store, meta in STORE_CONTEXT.items():
-        if store == 'All Stores': continue
-        total_sales = df[df['store_location'] == store]['transaction_qty'].sum() * df[df['store_location'] == store]['unit_price'].mean()
-        efficiency = total_sales / meta['sq_ft']
-        comp_data.append({'Store': store, 'Efficiency': efficiency, 'Foot Traffic': meta['foot_traffic']})
-
-    comp_df = pd.DataFrame(comp_data)
-
+    st.markdown("We used AI to **predict store size** based on 'Bakery vs. Coffee' product usage, then calculated efficiency.")
+    
+    # 1. Get AI Predictions for Store Size
+    predicted_sizes_df = ai.predict_store_area_from_usage()
+    
+    # 2. Calculate Efficiency (Sales / Predicted Sq Ft)
+    # We need total sales per store to divide by the area
+    sales_per_store = df.groupby('store_location')['net_sales'].sum().reset_index()
+    
+    # Merge the sales data with the AI predicted size
+    merged_geo = pd.merge(predicted_sizes_df, sales_per_store, on='store_location')
+    
+    # Calculate Efficiency
+    merged_geo['Efficiency'] = merged_geo['net_sales'] / merged_geo['predicted_sq_ft']
+    
+    # 3. Plot
     fig_geo = go.Figure()
+    
+    # Bar for Efficiency
     fig_geo.add_trace(go.Bar(
-        x=comp_df['Store'], y=comp_df['Efficiency'],
-        name='Sales per Sq.Ft', marker_color='#ff7f50'
+        x=merged_geo['store_location'], 
+        y=merged_geo['Efficiency'],
+        name='Sales per AI-Predicted Sq.Ft', 
+        marker_color='#ff7f50'
     ))
+    
+    # Line for the Predicted Size (to show what the AI guessed)
     fig_geo.add_trace(go.Scatter(
-        x=comp_df['Store'], y=comp_df['Foot Traffic'],
-        name='Foot Traffic Index', yaxis='y2',
-        mode='markers', marker=dict(size=15, color='#00e5ff')
+        x=merged_geo['store_location'], 
+        y=merged_geo['predicted_sq_ft'],
+        name='AI Predicted Area (sq.ft)', 
+        yaxis='y2',
+        mode='markers+text',
+        text=[f"{int(x)} sq.ft" for x in merged_geo['predicted_sq_ft']],
+        textposition="top center",
+        marker=dict(size=15, color='#00e5ff', symbol='square')
     ))
-
+    
     fig_geo.update_layout(
-        title="Store Efficiency vs. Real World Traffic",
-        yaxis=dict(title="Sales Revenue per Sq. Ft ($)"),
-        yaxis2=dict(title="Foot Traffic Index", overlaying='y', side='right'),
+        title="Store Efficiency (Using AI-Derived Areas)",
+        yaxis=dict(title="Sales Efficiency ($/sq.ft)"),
+        yaxis2=dict(
+            title="Predicted Store Size (sq.ft)", 
+            overlaying='y', 
+            side='right',
+            range=[0, 2000] # Set a fixed range so dots don't fly off
+        ),
         template="plotly_dark",
-        legend=dict(x=0.1, y=1.1, orientation='h')
+        legend=dict(x=0.1, y=1.1, orientation='h'),
+        margin=dict(r=50) # Make room for right axis
     )
+    
     st.plotly_chart(fig_geo, use_container_width=True)
+    
+    # Explain the AI Logic to the user
+    with st.expander("🧠 How did the AI guess the store size?"):
+        st.write("""
+        The model analyzed **Product Usage Patterns**:
+        1. **Bakery Ratio:** Stores selling more croissants/food likely have seating areas -> **Predicted Larger**.
+        2. **Transaction Volume:** Higher volume implies larger counter/queue space -> **Predicted Larger**.
+        """)
 
 # -----------------------------------------------
 # ----------------------------------------------------
