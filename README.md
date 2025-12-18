@@ -106,7 +106,7 @@ The raw CSV is enriched with synthetic **"Metadata" dictionaries** (e.g., `STORE
 
 <div align="center">
 
-| **Hamza Tahboub** | **Majd Igbarea** | **Marysol Karwan** | **Igor Kornov** |
+| **Hamza Tahboub** | **Majd Igbarea** | **Marysol Karwan** | **Igor Kornev** |
 | :---: | :---: | :---: | :---: |
 | *(The AI Builder)* | Contributor | Contributor | Contributor |
 
