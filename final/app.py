@@ -107,6 +107,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import OneHotEncoder, PolynomialFeatures
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.model_selection import train_test_split
 
 # --- 5. DATA LOADING ---
 @st.cache_data
@@ -160,32 +162,53 @@ class AIEngine:
         self.df['tourist_index'] = self.df['month_num'].map(lambda x: NYC_SEASONAL_DATA.get(x, {}).get('tourist_index', 1.0))
         self.df.fillna(0, inplace=True)
 
-    def get_future_forecast(self, store_name, months=6):
+    def get_future_forecast(self, store_name, days=30):
+        """
+        Predicts Net Sales for the next N days (default 30) using Polynomial Regression.
+        """
         data = self.df.copy()
         if store_name != 'All Stores':
             data = data[data['store_location'] == store_name]
-        data['month_idx'] = data['tx_date'].dt.to_period('M').astype(int)
-        monthly = data.groupby('month_idx').agg({'net_sales': 'sum', 'avg_temp': 'mean', 'tourist_index': 'mean', 'tx_date': 'first'}).reset_index()
+            
+        # Group by DAY instead of Month
+        data['date_idx'] = data['tx_date'].dt.date
+        daily = data.groupby('date_idx').agg({
+            'net_sales': 'sum', 
+            'avg_temp': 'mean', 
+            'tourist_index': 'mean',
+            'month_num': 'mean' # Keep track of month to look up weather later
+        }).reset_index()
         
-        if len(monthly) < 3: return pd.DataFrame() 
+        # Convert date to an integer (ordinal) for regression
+        daily['date_ordinal'] = pd.to_datetime(daily['date_idx']).map(pd.Timestamp.toordinal)
 
-        X = monthly[['month_idx', 'avg_temp', 'tourist_index']]
-        y = monthly['net_sales']
-        poly_model = Pipeline([('poly', PolynomialFeatures(degree=2)), ('linear', LinearRegression())])
+        if len(daily) < 10: return pd.DataFrame() # Need more daily points for a good curve
+
+        X = daily[['date_ordinal', 'avg_temp', 'tourist_index']]
+        y = daily['net_sales']
+
+        # Train Model on Daily Data
+        poly_model = Pipeline([('poly', PolynomialFeatures(degree=3)), ('linear', LinearRegression())])
         poly_model.fit(X, y)
         
-        last_idx = monthly['month_idx'].max()
-        last_date = monthly['tx_date'].max()
+        last_date = pd.to_datetime(daily['date_idx'].max())
         future_rows = []
-        for i in range(1, months + 1):
-            next_date = last_date + pd.DateOffset(months=i)
+        
+        # Loop for next 30 DAYS
+        for i in range(1, days + 1):
+            next_date = last_date + pd.Timedelta(days=i)
             season = NYC_SEASONAL_DATA.get(next_date.month, {})
+            
             future_rows.append({
-                'month_idx': last_idx + i, 'avg_temp': season.get('avg_temp', 50),
-                'tourist_index': season.get('tourist_index', 1.0), 'Date': next_date
+                'date_ordinal': next_date.toordinal(),
+                'avg_temp': season.get('avg_temp', 50),
+                'tourist_index': season.get('tourist_index', 1.0),
+                'Date': next_date
             })
+            
         future_X = pd.DataFrame(future_rows)
-        predictions = poly_model.predict(future_X[['month_idx', 'avg_temp', 'tourist_index']])
+        predictions = poly_model.predict(future_X[['date_ordinal', 'avg_temp', 'tourist_index']])
+        
         return pd.DataFrame({"Date": future_X['Date'], "Predicted_Sales": predictions})
 
     def predict_store_area_from_usage(self):
@@ -204,11 +227,44 @@ class AIEngine:
 
     def simulate_new_product(self, category, price, store_name, size_name):
         if not self.qty_model: self.train_scenario_model()
+        
         context = STORE_CONTEXT.get(store_name, STORE_CONTEXT["All Stores"])
-        input_data = pd.DataFrame({'product_category': [category], 'unit_price': [price], 'foot_traffic': [context['foot_traffic']], 'office_density': [context['office_density']]})
+        input_data = pd.DataFrame({
+            'product_category': [category], 'unit_price': [price],
+            'foot_traffic': [context['foot_traffic']], 'office_density': [context['office_density']]
+        })
+        
+        # 1. Base Prediction
         avg_qty = self.qty_model.predict(input_data)[0]
         size_factor = 0.8 if size_name.lower() in ['mega', 'huge', 'xl'] else 1.0
-        return avg_qty * 300 * size_factor, avg_qty * 300 * size_factor * price, context
+        
+        estimated_units = avg_qty * 300 * size_factor
+        gross_revenue = estimated_units * price
+        
+        # 2. SMART CANNIBALIZATION LOGIC (Price-Based)
+        cannibalization_loss = 0.0
+        
+        # Get historical data for this category to find the "Reference Price"
+        # (e.g., What do people usually pay for Tea?)
+        cat_data = self.df[self.df['product_category'] == category]
+        
+        if not cat_data.empty:
+            historical_avg_price = cat_data['unit_price'].mean()
+            
+            # THE LOGIC: If new price is significantly cheaper (e.g., < 90% of usual), 
+            # people will likely trade down.
+            if price < (historical_avg_price * 0.9):
+                # Calculate the price gap
+                price_gap = historical_avg_price - price
+                
+                # Assume 25% of the new units come from existing customers switching down
+                switchers = estimated_units * 0.25
+                
+                # The loss is the money we WOULD have made if they stayed with the expensive option
+                cannibalization_loss = switchers * price_gap
+
+        return estimated_units, gross_revenue, cannibalization_loss, context
+            
 
     def train_scenario_model(self):
         features = ['product_category', 'unit_price', 'foot_traffic', 'office_density']
@@ -220,6 +276,80 @@ class AIEngine:
         ])
         self.qty_model = Pipeline(steps=[('preprocessor', preprocessor), ('model', RandomForestRegressor(n_estimators=50, random_state=42))])
         self.qty_model.fit(train_data[features], train_data[target])
+    def get_model_performance_metrics(self):
+        metrics = {}
+
+        # --- CHECK 1: Product Simulator (Revenue Accuracy) ---
+        # (No changes here, keeping your existing logic)
+        if not self.qty_model: self.train_scenario_model()
+        
+        features = ['product_category', 'unit_price', 'foot_traffic', 'office_density']
+        target = 'transaction_qty'
+        data = self.df.dropna(subset=features + [target])
+        
+        X = data[features]
+        y = data[target]
+        
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        test_model = self.qty_model
+        test_model.fit(X_train, y_train)
+        
+        pred_qty = test_model.predict(X_test)
+        actual_revenue = y_test * X_test['unit_price']
+        predicted_revenue = pred_qty * X_test['unit_price']
+        
+        metrics['simulator_rmse'] = np.sqrt(mean_squared_error(actual_revenue, predicted_revenue))
+        metrics['simulator_r2'] = r2_score(actual_revenue, predicted_revenue)
+
+        # --- CHECK 2: Sales Forecast (UPDATED TO DAILY) ---
+        # 1. Prepare Daily Data (Same logic as get_future_forecast)
+        data = self.df.copy()
+        data['date_idx'] = data['tx_date'].dt.date
+        daily = data.groupby('date_idx').agg({
+            'net_sales': 'sum', 
+            'avg_temp': 'mean', 
+            'tourist_index': 'mean'
+        }).reset_index()
+        
+        # 2. Add Ordinal Date for Regression
+        daily['date_ordinal'] = pd.to_datetime(daily['date_idx']).map(pd.Timestamp.toordinal)
+        
+        if len(daily) > 10:
+            X = daily[['date_ordinal', 'avg_temp', 'tourist_index']]
+            y = daily['net_sales']
+            
+            # 3. Train & Predict on the same data to check "Fit"
+            # Note: We use degree=3 to match your new forecast logic
+            poly_model = Pipeline([('poly', PolynomialFeatures(degree=3)), ('linear', LinearRegression())])
+            poly_model.fit(X, y)
+            preds = poly_model.predict(X)
+            
+            metrics['forecast_rmse'] = np.sqrt(mean_squared_error(y, preds))
+            metrics['forecast_r2'] = r2_score(y, preds)
+        else:
+            metrics['forecast_rmse'] = 0
+            metrics['forecast_r2'] = 0
+
+        # --- CHECK 3: Store Size (No changes) ---
+        store_stats = self.df.groupby('store_location').agg(
+            total_qty=('transaction_qty', 'sum'),
+            bakery_qty=('transaction_qty', lambda x: x[self.df['product_category'] == 'Bakery'].sum())
+        ).reset_index()
+        store_stats['bakery_ratio'] = store_stats['bakery_qty'] / store_stats['total_qty']
+        store_stats['actual_sq_ft'] = store_stats['store_location'].map(TRAINING_DATA_REALITY)
+        check_data = store_stats.dropna(subset=['actual_sq_ft'])
+        
+        if not check_data.empty:
+            model = LinearRegression()
+            X = check_data[['total_qty', 'bakery_ratio']]
+            y = check_data['actual_sq_ft']
+            model.fit(X, y)
+            preds = model.predict(X)
+            metrics['size_rmse'] = np.sqrt(mean_squared_error(y, preds))
+        else:
+            metrics['size_rmse'] = 0
+            
+        return metrics
 
 def render_ai_dashboard(df):
     df = df.copy()
@@ -230,18 +360,36 @@ def render_ai_dashboard(df):
     st.title("🤖 AI Future Insights & Lab")
     st.divider()
 
-    st.subheader("1. 📈 Future Revenue Prediction")
+    st.subheader("1. 📈 Future Revenue Prediction (Next 30 Days)")
     c1, c2 = st.columns([1, 3])
     with c1:
         target_store = st.selectbox("Select Store", store_locations, key="ai_store")
-        months_fwd = st.slider("Months", 1, 12, 6)
+        # Removed the slider for months since we are fixed to 30 days
+        st.info("Predicting daily sales for the upcoming month.")
+        
     with c2:
-        forecast_df = ai.get_future_forecast(target_store, months_fwd)
+        # Call with default days=30
+        forecast_df = ai.get_future_forecast(target_store, days=30)
+        
         if not forecast_df.empty:
             fig_pred = go.Figure()
-            fig_pred.add_trace(go.Scatter(x=forecast_df['Date'], y=forecast_df['Predicted_Sales'], mode='lines+markers', name='AI Prediction', line=dict(color='#00e5ff', width=3, dash='dash')))
-            fig_pred.update_layout(title=f"Prediction: {target_store}", template="plotly_dark", height=350)
+            fig_pred.add_trace(go.Scatter(
+                x=forecast_df['Date'], 
+                y=forecast_df['Predicted_Sales'], 
+                mode='lines+markers', 
+                name='Daily Forecast', 
+                line=dict(color='#00e5ff', width=2)
+            ))
+            fig_pred.update_layout(
+                title=f"30-Day Forecast: {target_store}", 
+                template="plotly_dark", 
+                height=350,
+                xaxis_title="Date",
+                yaxis_title="Predicted Sales ($)"
+            )
             st.plotly_chart(fig_pred, use_container_width=True)
+        else:
+            st.warning("Not enough daily data to generate a forecast.")
 
     st.divider()
     st.subheader("2. 🧪 New Product Simulator")
@@ -255,39 +403,71 @@ def render_ai_dashboard(df):
         sim_cat = st.selectbox("Category", ['Tea','Coffee', 'Bakery', 'Drinking Chocolate'])
         sim_size = st.text_input("New Size Name", "Small")
     with col3:
-        sim_price = st.number_input("Unit Price ($)", 2.0, 15.0, 4.50)
+        sim_price = st.number_input("Unit Price ($)", 1.5, 15.0, 2.0)
 
     if st.button("🔮 Simulate Launch Results"):
-        units, rev, ctx = ai.simulate_new_product(sim_cat, sim_price, sim_store, sim_size)
-        st.markdown("#### 📊 Simulation Results")
+        # Unpack the 4 values (including the new 'loss')
+        units, gross_rev, loss, ctx = ai.simulate_new_product(sim_cat, sim_price, sim_store, sim_size)
+        
+        net_revenue = gross_rev - loss
+        
+        st.markdown("#### 📊 Simulation Results (Net Impact)")
+        
+        # Row 1: The Metrics
         m1, m2, m3 = st.columns(3)
         m1.metric("Est. Monthly Units", f"{int(units)}")
-        m2.metric("Est. Monthly Revenue", f"${rev:,.2f}")
-        m3.metric("Foot Traffic Score", f"{ctx['foot_traffic']}/100", delta_color="off")
+        m2.metric("Gross Revenue", f"${gross_rev:,.2f}")
+        
+        # --- CONDITIONAL UI LOGIC ---
+        if loss > 0:
+            # Case A: Cannibalization Detected -> Show Red Delta & Warning
+            m3.metric(
+                "Net Revenue Impact", 
+                f"${net_revenue:,.2f}", 
+                delta=f"-${loss:,.2f} Cannibalization Risk",
+                delta_color="inverse" # Makes the negative delta red
+            )
+            
+            st.warning(
+                f"**⚠️ Cannibalization Detected:** "
+                f"The model predicts that adding a **{sim_size} {sim_cat}** will cause some existing customers to switch from larger, more expensive sizes.\n\n"
+                f"* **Gross Sales:** ${gross_rev:,.2f}\n"
+                f"* **Cannibalization Loss:** -${loss:,.2f}\n"
+                f"* **Real Business Value:** ${net_revenue:,.2f}"
+            )
+        else:
+            # Case B: No Risk -> Show Clean Metric & Success Message
+            m3.metric("Net Revenue Impact", f"${net_revenue:,.2f}")
+            
+            st.success(
+                f"✅ **Safe Launch:** No significant cannibalization risk detected for **{sim_size} {sim_cat}** in {sim_store}."
+            )
 
-        st.warning(
-            f"**🧠 Model Reasoning:** "
-            f"Prediction adjusted based on **{sim_store}'s** real-world data:\n"
-            f"* **Office Density ({ctx['office_density']}):** Determines morning rush volume.\n"
-            f"* **Foot Traffic ({ctx['foot_traffic']}):** Influences walk-in probability.\n"
-            f"The model detected that {sim_cat} sells better in high-density areas."
-        )
 
     st.divider()
-    st.subheader("3. 🗺️ Efficiency Analysis")
-    pred_size = ai.predict_store_area_from_usage()
-    
-    sales = df.groupby('store_location')['net_sales'].sum().reset_index()
-    
-    merged = pd.merge(pred_size, sales, on='store_location')
-    merged['Efficiency'] = merged['net_sales'] / merged['predicted_sq_ft']
+    with st.expander("🔬 Model Performance Metrics (RMSE & Accuracy)"):
+        st.markdown("""
+        **Technical Validation Report:**
+        * **RMSE (Root Mean Square Error):** On average, how much is the prediction off? (Lower is better)
+        * **R² Score:** How well does the model explain the variance? (100 is perfect, 0 is random guessing)
+        """)
+        
+        # Calculate scores on the fly
+        scores = ai.get_model_performance_metrics()
+        
+        c1, c2, c3 = st.columns(3)
+        
+        with c1:
+            st.markdown("#### 🛒 Product Simulator")
+            # CHANGED: Label says "Revenue Error" and format includes "$"
+            st.metric("RMSE (Revenue Error)", f"${scores.get('simulator_rmse', 0):.2f}")
+            st.metric("R² Accuracy", f"{scores.get('simulator_r2', 0):.2%}")
 
-    fig_geo = go.Figure()
-    fig_geo.add_trace(go.Bar(x=merged['store_location'], y=merged['Efficiency'], name='Sales/SqFt', marker_color='#ff7f50'))
-    fig_geo.add_trace(go.Scatter(x=merged['store_location'], y=merged['predicted_sq_ft'], name='Pred Size', yaxis='y2', mode='markers', marker=dict(size=15, color='#00e5ff', symbol='square')))
-    fig_geo.update_layout(title="Efficiency vs AI Predicted Size", yaxis2=dict(overlaying='y', side='right', title="Sq Ft"), template="plotly_dark")
-    st.plotly_chart(fig_geo, use_container_width=True)
-
+        with c2:
+            st.markdown("#### 📈 Revenue Forecast")
+            st.metric("RMSE (Dollars)", f"${scores.get('forecast_rmse', 0):,.2f}")
+            st.metric("Fit Score (R²)", f"{scores.get('forecast_r2', 0):.2%}")
+            
 # --- 7. MAIN NAVIGATION & DASHBOARD ---
 if 'current_page' not in st.session_state: st.session_state['current_page'] = 'Dashboard'
 
@@ -429,6 +609,15 @@ else:
             name="Deviation (+1 Std)", 
             line=dict(dash='dash', color='#286090')
         ))
+
+        # Deviation (-1 Std) - The Floor
+        fig_hr.add_trace(go.Scatter(
+            x=hourly_stats['hour'], 
+            y=(hourly_stats['mean'] - hourly_stats['std']).clip(lower=0), # Ensures it doesn't go below 0
+            name="Deviation (-1 Std)", 
+            line=dict(dash='dash', color='#286090'),
+            showlegend=True
+        ))
         
         fig_hr.update_layout(
             title="Average Items Sold per Hour (Last 6 Months)", 
@@ -441,7 +630,6 @@ else:
         st.info("No data for current filters.")
 
     # 3. Sizes Analysis
-    st.subheader("Cup Sizes per Category")# 3. Sizes Analysis
     st.subheader("Cup Sizes per Category")
     df_sizes = df_filtered[df_filtered['product_category'] != 'Coffee beans'].copy()
     
