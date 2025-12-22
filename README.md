@@ -80,7 +80,7 @@ The raw CSV is enriched with synthetic **"Metadata" dictionaries** (e.g., `STORE
 
 | Pipeline | Composition | Reasoning |
 | :--- | :--- | :--- |
-| **Forecasting** | `PolynomialFeatures(degree=2)` + `LinearRegression` | Accounts for the non-linear curve of seasonal sales cycles. |
+| **Forecasting** | `PolynomialFeatures(degree=2)`  | Accounts for the non-linear curve of seasonal sales cycles. |
 | **Simulation** | `ColumnTransformer` + `RandomForestRegressor` | Handles categorical data (Product Categories) to predict continuous targets (Sales Qty). |
 
 ---
