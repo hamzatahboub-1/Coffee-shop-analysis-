@@ -8,7 +8,7 @@
 
 **A next-generation BI tool integrating historical sales analysis with predictive AI modeling.**
 
-[**🚀 Launch Live Dashboard**](https://px8m8ezwfxgx77kkxwgpje.streamlit.app/)
+[**🚀 Launch Live Dashboard**](https://dashboardcoffeeshop.streamlit.app/)
 
 </div>
 
