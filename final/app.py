@@ -279,8 +279,7 @@ class AIEngine:
     def get_model_performance_metrics(self):
         metrics = {}
 
-        # --- CHECK 1: Product Simulator (Revenue Accuracy) ---
-        # (No changes here, keeping your existing logic)
+        # --- CHECK 1: Product Simulator (Projected MONTHLY Accuracy) ---
         if not self.qty_model: self.train_scenario_model()
         
         features = ['product_category', 'unit_price', 'foot_traffic', 'office_density']
@@ -290,19 +289,30 @@ class AIEngine:
         X = data[features]
         y = data[target]
         
+        # Split data
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
         test_model = self.qty_model
         test_model.fit(X_train, y_train)
         
+        # 1. Predict Units for single transactions
         pred_qty = test_model.predict(X_test)
+        
+        # 2. Calculate Revenue Error per Transaction
         actual_revenue = y_test * X_test['unit_price']
         predicted_revenue = pred_qty * X_test['unit_price']
         
-        metrics['simulator_rmse'] = np.sqrt(mean_squared_error(actual_revenue, predicted_revenue))
+        per_transaction_rmse = np.sqrt(mean_squared_error(actual_revenue, predicted_revenue))
+        
+        # 3. SCALE TO MONTHLY (The Fix)
+        # If we are wrong by $1.74 per customer, and we expect ~300 customers/month:
+        # We project the total monthly risk.
+        metrics['simulator_rmse'] = per_transaction_rmse * 300 
+        
         metrics['simulator_r2'] = r2_score(actual_revenue, predicted_revenue)
 
-        # --- CHECK 2: Sales Forecast (UPDATED TO DAILY) ---
-        # 1. Prepare Daily Data (Same logic as get_future_forecast)
+        # --- CHECK 2: Sales Forecast (Daily Accuracy) ---
+        # (This remains unchanged as it is already correct for Daily aggregation)
         data = self.df.copy()
         data['date_idx'] = data['tx_date'].dt.date
         daily = data.groupby('date_idx').agg({
@@ -310,16 +320,12 @@ class AIEngine:
             'avg_temp': 'mean', 
             'tourist_index': 'mean'
         }).reset_index()
-        
-        # 2. Add Ordinal Date for Regression
         daily['date_ordinal'] = pd.to_datetime(daily['date_idx']).map(pd.Timestamp.toordinal)
         
         if len(daily) > 10:
             X = daily[['date_ordinal', 'avg_temp', 'tourist_index']]
             y = daily['net_sales']
             
-            # 3. Train & Predict on the same data to check "Fit"
-            # Note: We use degree=3 to match your new forecast logic
             poly_model = Pipeline([('poly', PolynomialFeatures(degree=3)), ('linear', LinearRegression())])
             poly_model.fit(X, y)
             preds = poly_model.predict(X)
@@ -455,12 +461,12 @@ def render_ai_dashboard(df):
         # Calculate scores on the fly
         scores = ai.get_model_performance_metrics()
         
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(3)
         
         with c1:
             st.markdown("#### 🛒 Product Simulator")
-            # CHANGED: Label says "Revenue Error" and format includes "$"
-            st.metric("RMSE (Revenue Error)", f"${scores.get('simulator_rmse', 0):.2f}")
+            # CHANGED: Label now clarifies this is "Monthly" error
+            st.metric("Proj. Monthly Error", f"±${scores.get('simulator_rmse', 0):,.2f}")
             st.metric("R² Accuracy", f"{scores.get('simulator_r2', 0):.2%}")
 
         with c2:
