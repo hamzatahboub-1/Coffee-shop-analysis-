@@ -461,7 +461,7 @@ def render_ai_dashboard(df):
         # Calculate scores on the fly
         scores = ai.get_model_performance_metrics()
         
-        c1, c2 = st.columns(3)
+        c1, c2 = st.columns(2)
         
         with c1:
             st.markdown("#### 🛒 Product Simulator")
