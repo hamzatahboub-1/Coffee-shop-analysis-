@@ -73,7 +73,6 @@ This project demonstrates several advanced data science techniques:
 The raw CSV is enriched with synthetic **"Metadata" dictionaries** (e.g., `STORE_CONTEXT`), adding variables like:
 * `foot_traffic`
 * `office_density`
-* `sq_ft`
 * `seasonal_data` (Temperature, Tourist Index)
 
 ### 2. Model Pipelines
