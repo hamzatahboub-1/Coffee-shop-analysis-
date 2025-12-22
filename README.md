@@ -35,7 +35,7 @@ The application analyzes sales transaction data to provide historical insights a
 
 ### 🤖 2. AI Future Insights & Lab
 
-> This application utilizes **Scikit-Learn** to power three distinct predictive modules:
+> This application utilizes **Scikit-Learn** to power two distinct predictive modules:
 
 #### 📈 Future Revenue Prediction
 * **Model:** Polynomial Regression (Pipeline).
