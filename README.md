@@ -47,10 +47,6 @@ The application analyzes sales transaction data to provide historical insights a
 * **Function:** Simulates the success of a hypothetical product launch.
 * **Logic:** Takes into account "Real World Context" (Foot traffic, Office density) to predict unit sales and revenue.
 
-#### 🗺️ Geographical Efficiency Analysis
-* **Model:** Linear Regression.
-* **Function:** Predicts the *ideal* square footage of a store based on its "Bakery vs. Coffee" sales ratio.
-* **Logic:** Calculates an efficiency score (**Sales per Predicted Sq. Ft.**) to identify over/under-performing real estate.
 
 ---
 
@@ -86,7 +82,6 @@ The raw CSV is enriched with synthetic **"Metadata" dictionaries** (e.g., `STORE
 | :--- | :--- | :--- |
 | **Forecasting** | `PolynomialFeatures(degree=2)` + `LinearRegression` | Accounts for the non-linear curve of seasonal sales cycles. |
 | **Simulation** | `ColumnTransformer` + `RandomForestRegressor` | Handles categorical data (Product Categories) to predict continuous targets (Sales Qty). |
-| **Real Estate** | `LinearRegression` | Finds the correlation between product mix (Bakery Ratio) and required physical space. |
 
 ---
 
