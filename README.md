@@ -59,7 +59,7 @@ The application analyzes sales transaction data to provide historical insights a
 | **Frontend** | Streamlit (Custom CSS) |
 | **Data Manipulation** | Pandas, NumPy |
 | **Visualization** | Plotly Graph Objects, Matplotlib |
-| **Machine Learning** | Scikit-Learn (LinearRegression, RandomForest, PolynomialFeatures) |
+| **Machine Learning** | Scikit-Learn (RandomForest, PolynomialFeatures) |
 
 </div>
 
